@@ -1,9 +1,7 @@
 package com.example.cybs.util;
 
 import com.example.cybs.annotation.CyberSourceProperty;
-import com.example.cybs.domain.request.PayerAuthSetupRequest;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import org.apache.xpath.operations.Bool;
+import com.example.cybs.util.annotation.CyberSourceProperty;
 
 import java.beans.BeanInfo;
 import java.beans.IntrospectionException;
@@ -13,7 +11,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -38,16 +35,16 @@ public class BeanConvertUtil {
             for (PropertyDescriptor propertyDescriptor : propertyDescriptors) {
                 // 获取属性名称
                 String property = propertyDescriptor.getName();
-                Field field = bean.getClass().getDeclaredField(property);
-                CyberSourceProperty annotation = field.getAnnotation(CyberSourceProperty.class);
                 // 如果属性上标注了注解,说明不是正常的驼峰命名,按照注解的值当成map的key
                 // 如果属性上没有注解,正常的驼峰命名转下划线
+                Field field = getFieldByProperty(bean.getClass(), property);
+                CyberSourceProperty annotation = field.getAnnotation(CyberSourceProperty.class);
                 property = annotation == null ? humpToUnderline(property) : annotation.value();
                 Method readMethod = propertyDescriptor.getReadMethod();
                 Object value = readMethod.invoke(bean);
                 map.put(property, String.valueOf(value));
             }
-        } catch (IntrospectionException | InvocationTargetException | IllegalAccessException | NoSuchFieldException e) {
+        } catch (IntrospectionException | InvocationTargetException | IllegalAccessException e) {
             e.printStackTrace();
         }
         return map;
@@ -63,7 +60,7 @@ public class BeanConvertUtil {
                 for (PropertyDescriptor propertyDescriptor : propertyDescriptors) {
                     // 获取属性名称
                     String property = propertyDescriptor.getName();
-                    Field field = clazz.getDeclaredField(property);
+                    Field field = getFieldByProperty(clazz,property);
                     CyberSourceProperty annotation = field.getAnnotation(CyberSourceProperty.class);
                     property = annotation == null ? underlineToHump(property) : annotation.value();
                     // 获取setter方法,不能使用Lombok的Accessors注解,getWriteMethod只能获取到返回值为void的setter方法
@@ -71,7 +68,7 @@ public class BeanConvertUtil {
                     Method writeMethod = propertyDescriptor.getWriteMethod();
                     writeMethod.invoke(bean, map.get(property));
                 }
-            } catch (InstantiationException | IllegalAccessException | IntrospectionException | InvocationTargetException | NoSuchFieldException e) {
+            } catch (InstantiationException | IllegalAccessException | IntrospectionException | InvocationTargetException e) {
                 e.printStackTrace();
             }
         }
@@ -100,6 +97,25 @@ public class BeanConvertUtil {
             str = str.replaceAll("_" + target, target.toUpperCase());
         }
         return str;
+    }
+
+    // 通过属性名称获取Field(包含父类)
+    private static Field getFieldByProperty(Class<?> clazz,String property) {
+        if(clazz == null) {
+            return null;
+        }
+        // 获取当前类的Field对象
+        Field field = null;
+        while (field == null) {
+            try {
+                // 从当前类中查找到,退出while循环
+                field = clazz.getDeclaredField(property);
+            } catch (NoSuchFieldException e) {
+                // 从当前类中查找不到会抛出异常,从父类中查找
+                clazz = clazz.getSuperclass();
+            }
+        }
+        return field;
     }
 
 }
