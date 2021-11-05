@@ -1,17 +1,25 @@
 package com.example.cybs.util;
 
 import com.example.cybs.annotation.CyberSourceProperty;
-import com.example.cybs.util.annotation.CyberSourceProperty;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.BeanWrapper;
+import org.springframework.beans.BeanWrapperImpl;
+import org.springframework.core.io.ClassPathResource;
 
 import java.beans.BeanInfo;
 import java.beans.IntrospectionException;
 import java.beans.Introspector;
 import java.beans.PropertyDescriptor;
+import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.HashMap;
-import java.util.Map;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -23,6 +31,21 @@ import java.util.regex.Pattern;
 
 public class BeanConvertUtil {
 
+
+
+    public static <T> T properties2Bean(String filename, Class<T> clazz) {
+        Properties properties = new Properties();
+        // 从classpath中加载properties文件
+        try {
+            ClassPathResource classPathResource = new ClassPathResource(filename);
+            InputStream inputStream = classPathResource.getInputStream();
+            properties.load(inputStream);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        Map<String,String> map = new HashMap<String,String>((Map)properties);
+        return map2Bean(map, clazz);
+    }
 
     public static Map<String, String> bean2Map(Object bean) {
         if (bean == null) {
@@ -50,7 +73,7 @@ public class BeanConvertUtil {
         return map;
     }
 
-    public static <T> T mapToBean(Map<String, String> map, Class<T> clazz) {
+    public static <T> T map2Bean(Map<String, String> map, Class<T> clazz) {
         T bean = null;
         if (map != null && map.size() > 0) {
             try {
@@ -66,7 +89,9 @@ public class BeanConvertUtil {
                     // 获取setter方法,不能使用Lombok的Accessors注解,getWriteMethod只能获取到返回值为void的setter方法
                     // 而Accessors(chain=true)的返回值是对象
                     Method writeMethod = propertyDescriptor.getWriteMethod();
-                    writeMethod.invoke(bean, map.get(property));
+                    String value = map.get(property);
+                    // setter方法只有一个参数的,直接取数组第一个元素
+                    writeMethod.invoke(bean, transType(value, writeMethod.getParameterTypes()[0]));
                 }
             } catch (InstantiationException | IllegalAccessException | IntrospectionException | InvocationTargetException e) {
                 e.printStackTrace();
@@ -74,6 +99,53 @@ public class BeanConvertUtil {
         }
         return bean;
     }
+
+    public static Object transType(String value,Class<?> t) {
+        if(t == String.class) {
+            return String.valueOf(value);
+        }else if(t == boolean.class || t == Boolean.class) {
+            return Boolean.valueOf(value);
+        }else if(t == Byte.class || t == byte.class) {
+            return Byte.valueOf(value);
+        }else if(t == Short.class || t == short.class) {
+            return Short.valueOf(value);
+        }else if(t == Float.class || t == float.class) {
+            return Float.valueOf(value);
+        }else if(t == Double.class || t == double.class) {
+            return Double.valueOf(value);
+        }else if(t == Integer.class || t == int.class) {
+            return Integer.valueOf(value);
+        }else if(t == Long.class || t == long.class) {
+            return Long.valueOf(value);
+        }else if(t == Character.class || t == char.class) {
+            return value.charAt(0);
+        }else if(t == BigDecimal.class) {
+            return new BigDecimal(value);
+        }else if(t == BigInteger.class) {
+            return new BigInteger(value);
+        }else if(t == Date.class) {
+            SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            try {
+                return simpleDateFormat.parse(value);
+            } catch (ParseException e) {
+                e.printStackTrace();
+                return null;
+            }
+        }else if(t.isEnum()) {
+            try {
+                Class<?> aClass = Class.forName(t.getName());
+                Field field = aClass.getDeclaredField(value);
+                return field.get(aClass);
+            } catch (ClassNotFoundException | NoSuchFieldException | IllegalAccessException e) {
+                e.printStackTrace();
+                return null;
+            }
+        } else {
+            return value;
+        }
+    }
+
+
 
     // 驼峰转下划线
     private static String humpToUnderline(String str) {
@@ -101,12 +173,9 @@ public class BeanConvertUtil {
 
     // 通过属性名称获取Field(包含父类)
     private static Field getFieldByProperty(Class<?> clazz,String property) {
-        if(clazz == null) {
-            return null;
-        }
         // 获取当前类的Field对象
         Field field = null;
-        while (field == null) {
+        while (field == null && clazz != null) {
             try {
                 // 从当前类中查找到,退出while循环
                 field = clazz.getDeclaredField(property);
@@ -118,4 +187,24 @@ public class BeanConvertUtil {
         return field;
     }
 
+
+    public static String[] getNullPropertyNames(Object source) {
+        final BeanWrapper src = new BeanWrapperImpl(source);
+        PropertyDescriptor[] pds = src.getPropertyDescriptors();
+
+        Set<String> emptyNames = new HashSet<>();
+        for (PropertyDescriptor pd : pds) {
+            Object srcValue = src.getPropertyValue(pd.getName());
+            if (srcValue == null) {
+                emptyNames.add(pd.getName());
+            }
+        }
+
+        String[] result = new String[emptyNames.size()];
+        return emptyNames.toArray(result);
+    }
+
+    public static void copyPropertiesIgnoreNull(Object src, Object target) {
+        BeanUtils.copyProperties(src, target, getNullPropertyNames(src));
+    }
 }
